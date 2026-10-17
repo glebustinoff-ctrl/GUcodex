@@ -26,6 +26,8 @@ jobs:
         with:
           node-version: '24'
       - run: npm run build:pages
+        env:
+          KARAOKE_API_URL: ${{ vars.KARAOKE_API_URL }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

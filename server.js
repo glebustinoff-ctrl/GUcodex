@@ -4,36 +4,20 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile, stat, rm } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { spawn } from 'node:child_process';
 import { pipeline } from 'node:stream/promises';
 import { Transform, Readable } from 'node:stream';
 import { parseLyrics, createASS, background, THEMES } from './lib.js';
 import { VKMusic } from './vk.js';
+import {createAutomaticVideo,separatorReady} from './automatic.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const MAX_BYTES = 100 * 1024 * 1024;
 const ID = /^[a-f0-9-]{36}$/;
 const DEMO = '[00:00.00]Город засыпает\n[00:04.00]Зажигаются огни\n[00:08.00]Мы оставим все заботы\n[00:12.00]Где-то там, за шумом дня\n[00:16.00]Эта музыка с тобою\n[00:20.00]Эта песня про меня\n[00:24.00]Пой, пока не станет светло\n[00:28.00]Начинается наш день';
 
-export function run(command, args, { onProgress, timeout = 120000 } = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-    let stdout = '', stderr = '';
-    const timer = setTimeout(() => child.kill('SIGKILL'), timeout);
-    child.stdout.on('data', data => { stdout = (stdout + data).slice(-100000); onProgress?.(data.toString()); });
-    child.stderr.on('data', data => { stderr = (stderr + data).slice(-12000); });
-    child.on('error', error => { clearTimeout(timer); reject(error); });
-    child.on('close', code => { clearTimeout(timer); code === 0 ? resolve(stdout) : reject(new Error(`${command}: ${stderr || `exit ${code}`}`)); });
-  });
-}
+import {run,probe,renderVideo} from './media.js';
+export {run} from './media.js';
 
-async function probe(file) {
-  const result = JSON.parse(await run('ffprobe', ['-v','error','-show_entries','format=duration:stream=codec_type,channels','-of','json', file]));
-  const duration = +result.format?.duration;
-  const audio = result.streams?.find(s => s.codec_type === 'audio');
-  if (!audio || !Number.isFinite(duration) || duration <= 0 || duration > 1200) throw new Error('Нужен аудиофайл длительностью до 20 минут.');
-  return { duration, channels: audio.channels };
-}
 async function jsonBody(req) {
   let body = '';
   for await (const data of req) {
@@ -43,11 +27,17 @@ async function jsonBody(req) {
   try { return JSON.parse(body); } catch { throw new Error('Некорректный JSON.'); }
 }
 
-export async function createApp({ dataDir = path.join(ROOT, '.data'), lyricsBase = 'https://lrclib.net', vkOptions } = {}) {
+export async function createApp({ dataDir = path.join(ROOT, '.data'), lyricsBase = 'https://lrclib.net', vkOptions, automaticOptions={} } = {}) {
   await mkdir(dataDir, { recursive: true });
   const jobs = new Map();
   const vk = new VKMusic(vkOptions);
   let busy = false;
+  async function findJob(id){
+    if(!ID.test(id||''))return null;
+    if(jobs.has(id))return jobs.get(id);
+    try{const result=JSON.parse(await readFile(path.join(dataDir,id,'result.json'),'utf8'));if(result.id===id&&result.status==='done'){jobs.set(id,result);return result;}}catch{}
+    return null;
+  }
   async function audioRecord(id) {
     if (!ID.test(id || '')) throw new Error('Выберите аудиофайл.');
     try { return JSON.parse(await readFile(path.join(dataDir, `${id}.json`), 'utf8')); }
@@ -57,9 +47,51 @@ export async function createApp({ dataDir = path.join(ROOT, '.data'), lyricsBase
   const server = http.createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
+    const allowedOrigin=process.env.CORS_ORIGIN||'https://glebustinoff-ctrl.github.io';
+    if(req.headers.origin===allowedOrigin){res.setHeader('Access-Control-Allow-Origin',allowedOrigin);res.setHeader('Vary','Origin');}
+    if(req.method==='OPTIONS'){
+      if(req.headers.origin!==allowedOrigin){res.writeHead(403);return res.end();}
+      res.writeHead(204,{'Access-Control-Allow-Methods':'GET, POST, OPTIONS','Access-Control-Allow-Headers':'Content-Type'});return res.end();
+    }
+    if(req.method==='POST'&&req.headers.origin&&req.headers.origin!==allowedOrigin){
+      let sameOrigin=false;try{sameOrigin=new URL(req.headers.origin).host===req.headers.host;}catch{}
+      if(!sameOrigin){res.writeHead(403,{'Content-Type':'application/json'});return res.end(JSON.stringify({error:'Этот источник запросов не разрешён.'}));}
+    }
     const url = new URL(req.url, 'http://localhost');
     try {
       if (req.method === 'GET' && url.pathname === '/api/health') return send(res, 200, { status: 'ok' });
+      if(req.method==='GET'&&url.pathname==='/api/auto/status'){
+        const separator=!!automaticOptions.separate||separatorReady();
+        return send(res,200,{ready:vk.configured&&separator,sourceConfigured:vk.configured,separatorReady:separator,reason:!vk.configured?'Нужно подключить доступ к аудио VK на сервере.':!separator?'На сервере ещё не подготовлена нейросеть для создания минуса.':''});
+      }
+      if(req.method==='POST'&&url.pathname==='/api/auto'){
+        const body=await jsonBody(req);
+        const title=typeof body.title==='string'?body.title.trim():'';
+        const artist=typeof body.artist==='string'?body.artist.trim():'';
+        if(!title||!artist||title.length>150||artist.length>150)throw new Error('Укажи название песни и исполнителя (до 150 символов).');
+        if(!vk.configured)throw Object.assign(new Error('Автоматическое получение песни из VK ещё не подключено. На сервере нужен аудиодоступ VK.'),{status:424});
+        if(!automaticOptions.separate&&!separatorReady())throw Object.assign(new Error('Нейросеть для создания минуса ещё не подготовлена на сервере.'),{status:424});
+        if(busy)return send(res,409,{error:'Уже создаётся видео. Дождись завершения.'});
+        const job={id:randomUUID(),status:'processing',step:'queued',message:'Запускаем создание караоке',progress:0};
+        jobs.set(job.id,job);busy=true;
+        createAutomaticVideo({job,dataDir,vk,title,artist,theme:body.theme,fontSize:body.fontSize,lyricsBase,...automaticOptions})
+          .catch(error=>{job.status='error';job.error=error.message;job.message='Не удалось завершить создание караоке';})
+          .finally(()=>{busy=false;});
+        return send(res,202,job);
+      }
+      if(req.method==='GET'&&url.pathname.startsWith('/api/auto/jobs/')){
+        const job=await findJob(url.pathname.split('/').pop());return send(res,job?200:404,job||{error:'Задание не найдено.'});
+      }
+      if(req.method==='GET'&&url.pathname.startsWith('/api/auto/output/')){
+        const job=await findJob(url.pathname.split('/').pop());
+        if(!job||job.status!=='done')throw Object.assign(new Error('Результат пока не готов.'),{status:404});
+        const kind=url.searchParams.get('file');
+        if(!['minus','lyrics'].includes(kind))throw new Error('Неизвестный файл.');
+        const file=kind==='minus'?path.join(dataDir,`${job.minusId}.audio`):path.join(dataDir,job.id,'lyrics.txt');
+        const name=kind==='minus'?'karaoke-minus.wav':job.timing==='lrc'?'lyrics.lrc':'lyrics.txt';
+        res.writeHead(200,{'Content-Type':kind==='minus'?'audio/wav':'text/plain; charset=utf-8','Content-Disposition':`attachment; filename="${name}"`});
+        const stream=createReadStream(file);stream.on('error',()=>res.destroy());res.on('close',()=>stream.destroy());return stream.pipe(res);
+      }
       if (req.method === 'GET' && url.pathname === '/api/vk/status') return send(res,200,{configured:vk.configured,verified:false});
       if (req.method === 'GET' && url.pathname === '/api/vk/search') {
         const title = (url.searchParams.get('title') || '').trim().slice(0,150);
@@ -147,7 +179,7 @@ export async function createApp({ dataDir = path.join(ROOT, '.data'), lyricsBase
         return send(res, 202, job);
       }
       if (req.method === 'GET' && url.pathname.startsWith('/api/jobs/')) {
-        const job = jobs.get(url.pathname.split('/').pop());
+        const job = await findJob(url.pathname.split('/').pop());
         return send(res, job ? 200 : 404, job || { error:'Задача не найдена. Сервер мог быть перезапущен.' });
       }
       if (req.method === 'GET' && (url.pathname.startsWith('/api/audio/') || url.pathname.startsWith('/api/download/'))) {
@@ -157,7 +189,7 @@ export async function createApp({ dataDir = path.join(ROOT, '.data'), lyricsBase
         const file = isVideo ? path.join(dataDir,id,'karaoke.mp4') : path.join(dataDir,`${id}.audio`);
         const info = await stat(file).catch(() => null);
         if (!info) throw Object.assign(new Error('Файл не найден.'), { status: 404 });
-        if (isVideo && jobs.get(id)?.status !== 'done') throw new Error('Видео ещё создаётся.');
+        if (isVideo && (await findJob(id))?.status !== 'done') throw new Error('Видео ещё создаётся.');
         const headers = { 'Content-Type': isVideo ? 'video/mp4' : 'application/octet-stream', 'Accept-Ranges':'bytes', 'Cache-Control':'private, no-store' };
         if (isVideo) headers['Content-Disposition'] = 'attachment; filename="karaoke-1080x1920.mp4"';
         let start = 0, end = info.size - 1, code = 200;
