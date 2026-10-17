@@ -6,6 +6,7 @@ const fields = { title: $('song-title'), artist: $('song-artist'), lyrics: $('ly
 const audio = $('audio-player');
 const state = { minus: null, plus: null, theme: 'violet', lines: [], currentAudioId: null, uploading: 0, rendering: false, projectId: null };
 let vkSearching = false;
+let automaticMode = true;
 let toastTimer, searchController, lastLine = -2, activeWords = [];
 const accents = { violet:'#dfb7f6', ocean:'#a1e5da', sunset:'#ffb68d' };
 const time = seconds => `${Math.floor((seconds || 0) / 60)}:${String(Math.floor((seconds || 0) % 60)).padStart(2, '0')}`;
@@ -110,6 +111,7 @@ function updateFont() {
 
 $('search-form').addEventListener('submit', async event => {
   event.preventDefault();
+  if(automaticMode)return runAutomatic();
   void searchVK();
   searchController?.abort(); searchController = new AbortController();
   const status = $('search-status'); status.hidden = false; status.classList.remove('error'); status.textContent = 'Ищем твою песню…';
@@ -138,6 +140,55 @@ $('search-form').addEventListener('submit', async event => {
     if (error.name !== 'AbortError') { status.textContent = error.message; status.classList.add('error'); }
   } finally { button.disabled = false; }
 });
+
+function setMode(automatic){
+  if(state.rendering)return toast('Дождись завершения текущего видео.');
+  automaticMode=automatic;document.body.classList.toggle('automatic-mode',automatic);
+  $('automatic-panel').hidden=!automatic;
+  for(const [id,selected] of [['automatic-mode',automatic],['manual-mode',!automatic]]){$(id).classList.toggle('selected',selected);$(id).setAttribute('aria-pressed',String(selected));}
+  const label=[...$('search-button').childNodes].find(n=>n.nodeType===Node.TEXT_NODE&&n.textContent.trim());
+  if(label)label.textContent=automatic?'Создать караоке автоматически':'Найти текст песни';
+  $('song-artist').required=automatic;
+  if(!automatic){$('automatic-video').hidden=true;$('phone-preview').hidden=false;}
+  else if($('automatic-video').getAttribute('src')){$('automatic-video').hidden=false;$('phone-preview').hidden=true;}
+}
+$('automatic-mode').addEventListener('click',()=>setMode(true));
+$('manual-mode').addEventListener('click',()=>setMode(false));
+async function runAutomatic(){
+  if(state.rendering||state.uploading)return toast('Дождись завершения текущей операции.');
+  const title=fields.title.value.trim(),artist=fields.artist.value.trim();
+  if(!title||!artist)return toast('Укажи название песни и исполнителя.');
+  state.rendering=true;state.automaticResult=null;$('search-button').disabled=true;
+  const status=$('automatic-status'),progress=$('automatic-progress');
+  status.hidden=false;status.classList.remove('error');status.textContent='Запускаем автоматическое создание…';
+  progress.hidden=false;progress.value=0;$('automatic-result').hidden=true;
+  $('automatic-video').pause();$('automatic-video').hidden=true;$('phone-preview').hidden=false;audio.pause();
+  const steps=['search','lyrics','separating','video'];
+  try{
+    let job=await post('/api/auto',{title,artist,theme:state.theme,fontSize:+fields.fontSize.value});
+    while(job.status==='processing'){
+      status.textContent=job.message||'Обрабатываем песню…';progress.value=job.progress||0;
+      const index=steps.indexOf(job.step);
+      document.querySelectorAll('.automatic-steps li').forEach((item,i)=>{item.classList.toggle('active',i===index);item.classList.toggle('done',i<index);});
+      await new Promise(resolve=>setTimeout(resolve,1500));
+      job=await api(`/api/auto/jobs/${job.id}`);
+    }
+    if(job.status!=='done')throw new Error(job.error||'Не удалось завершить создание.');
+    showAutomaticResult(job);
+    toast('Полное караоке готово. Можно скачать видео, минус и текст.');
+  }catch(error){status.textContent=error.message;status.classList.add('error');progress.hidden=true;}
+  finally{state.rendering=false;$('search-button').disabled=false;}
+}
+function showAutomaticResult(job){
+  state.automaticResult=job;
+  $('automatic-progress').hidden=false;$('automatic-progress').value=100;$('automatic-status').hidden=false;
+  $('automatic-status').classList.remove('error');$('automatic-status').textContent=`Готово: ${job.artist} — ${job.title}`;
+  document.querySelectorAll('.automatic-steps li').forEach(item=>{item.classList.remove('active');item.classList.add('done');});
+  for(const [id,key] of [['automatic-download','downloadUrl'],['automatic-minus','minusUrl'],['automatic-lyrics','lyricsUrl']]){$(id).href=job[key];$(id).setAttribute('download','');}
+  $('automatic-warning').textContent=job.warning||'';$('automatic-warning').hidden=!job.warning;
+  $('automatic-result').hidden=false;$('automatic-video').src=job.downloadUrl;$('automatic-video').hidden=!automaticMode;$('phone-preview').hidden=automaticMode;
+}
+api('/api/auto/status').then(status=>{$('automatic-availability').classList.toggle('unavailable',!status.ready);$('automatic-availability').textContent=status.ready?'Автоматическое создание доступно. Обработка может занять несколько минут.':status.reason||'Автоматическая обработка пока недоступна.';}).catch(()=>{$('automatic-availability').classList.add('unavailable');$('automatic-availability').textContent='Сервер обработки сейчас недоступен.';});
 
 async function searchVK() {
   if (vkSearching) return;
@@ -245,7 +296,8 @@ for (let i = 0; i < 35; i++) {
 
 $('load-demo').addEventListener('click', async () => {
   if (state.uploading || state.rendering) return toast('Дождись завершения текущей операции.');
-  if ((fields.lyrics.value || selectedAudio()) && !confirm('Заменить текущий проект демонстрационным?')) return;
+  if ((fields.lyrics.value || selectedAudio() || state.automaticResult) && !confirm('Заменить текущий проект демонстрационным?')) return;
+  setMode(false);
   const button = $('load-demo'); button.disabled = true;
   try {
     const demo = await post('/api/demo', {});
@@ -293,18 +345,23 @@ function getProjects() { try { const projects = JSON.parse(localStorage.getItem(
 function refreshProjectCount() { $('project-count').textContent = getProjects().length; }
 function storeProjects(projects) { localStorage.setItem('karaoke-projects', JSON.stringify(projects)); refreshProjectCount(); }
 $('save-project').addEventListener('click', () => {
+  if(state.rendering||state.uploading)return toast('Дождись завершения текущей операции.');
   if (!fields.title.value.trim()) return toast('Сначала укажи название проекта.');
   state.projectId ||= crypto.randomUUID();
-  const project = { id:state.projectId, savedAt:Date.now(), title:fields.title.value, artist:fields.artist.value, lyrics:fields.lyrics.value, offset:fields.offset.value, fontSize:fields.fontSize.value, source:fields.source.value, theme:state.theme, minus:state.minus, plus:state.plus };
+  const project = { id:state.projectId, savedAt:Date.now(), title:fields.title.value, artist:fields.artist.value, lyrics:fields.lyrics.value, offset:fields.offset.value, fontSize:fields.fontSize.value, source:fields.source.value, theme:state.theme, minus:state.minus, plus:state.plus,mode:automaticMode?'automatic':'manual',result:automaticMode?state.automaticResult:null };
   try { storeProjects([project, ...getProjects().filter(p => p.id !== project.id)].slice(0, 30)); toast('Проект сохранён в этом браузере.'); }
   catch { toast('Не удалось сохранить: хранилище браузера недоступно или заполнено.'); }
 });
 function loadProject(project) {
   if (state.rendering || state.uploading) return toast('Дождись завершения текущей операции.');
+  setMode(project.mode==='automatic');
   audio.pause();
   for (const key of ['title', 'artist', 'lyrics', 'offset', 'fontSize', 'source']) fields[key].value = project[key] ?? '';
   state.projectId = project.id; showTrack('minus', project.minus); showTrack('plus', project.plus);
   selectTheme(project.theme); updateFont(); updateAudio(); invalidateExport();
+  $('automatic-result').hidden=true;$('automatic-status').hidden=true;$('automatic-progress').hidden=true;
+  $('automatic-video').pause();$('automatic-video').removeAttribute('src');$('automatic-video').hidden=true;$('phone-preview').hidden=false;
+  if(project.mode==='automatic'&&project.result)showAutomaticResult(project.result);
   $('projects-dialog').close(); toast(staticMode?'Проект открыт. Аудио хранится в этом браузере.':'Проект открыт. Если сервер менялся, загрузи аудио заново.');
 }
 function renderProjects() {
@@ -323,12 +380,14 @@ function renderProjects() {
 $('open-projects').addEventListener('click', () => { renderProjects(); $('projects-dialog').showModal(); });
 $('new-project').addEventListener('click', () => {
   if (state.rendering || state.uploading) return toast('Дождись завершения текущей операции.');
-  if ((fields.lyrics.value || selectedAudio()) && !confirm('Создать новый проект? Несохранённые изменения будут потеряны.')) return;
+  if ((fields.lyrics.value || selectedAudio() || state.automaticResult) && !confirm('Создать новый проект? Несохранённые изменения будут потеряны.')) return;
   audio.pause(); state.projectId = null;
   fields.title.value = ''; fields.artist.value = ''; fields.lyrics.value = ''; fields.offset.value = 0; fields.source.value = 'minus'; fields.fontSize.value = '64';
   showTrack('minus', null); showTrack('plus', null); selectTheme('violet'); updateFont(); updateAudio(); invalidateExport();
   $('search-status').hidden = true; $('search-results').replaceChildren(); $('lyrics-caption').textContent = 'Вставь текст или загрузи файл с таймкодами'; fields.title.focus();
   $('vk-status').hidden = true; $('vk-results').replaceChildren();
+  state.automaticResult=null;$('automatic-result').hidden=true;$('automatic-status').hidden=true;$('automatic-progress').hidden=true;
+  $('automatic-video').pause();$('automatic-video').removeAttribute('src');$('automatic-video').hidden=true;$('phone-preview').hidden=false;setMode(true);
 });
 $('help-button').addEventListener('click', () => $('help-dialog').showModal());
 document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', () => { button.closest('details').open = false; $(button.dataset.action).click(); }));
@@ -346,4 +405,4 @@ if(staticMode){
   $('help-dialog').querySelector('.help-steps li:last-child').textContent=`Скачай видео. Браузер запишет всю песню в ${videoFormat.label}. Запись занимает столько же времени, сколько длится трек. Не сворачивай вкладку.`;
   $('help-dialog').querySelector('.dialog-note').textContent='На этой странице аудио хранится и обрабатывается в браузере. Для импорта из VK и серверного экспорта MP4 нужна серверная версия приложения.';
 }
-refreshProjectCount(); updateAudio(); updateFont();
+setMode(true);refreshProjectCount(); updateAudio(); updateFont();

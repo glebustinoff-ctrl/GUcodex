@@ -30,4 +30,3 @@ export function parseLyrics(input, duration, offset = 0) {
     end: Math.min(duration, Math.max(0, (parsed[i + 1]?.start ?? duration) + shift)),
   })).filter(row => row.text && row.start < duration && row.end > row.start);
 }
-
