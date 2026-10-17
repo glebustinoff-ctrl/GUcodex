@@ -7,7 +7,7 @@ on:
     inputs:
       mode:
         type: choice
-        options: [source-check, selftest]
+        options: [source-check, selftest, end-to-end]
         default: source-check
       title:
         description: Song title for source check
@@ -56,8 +56,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PREPARE_OUTCOME: ${{ steps.prepare.outcome }}
       - uses: actions/upload-artifact@v4
-        if: success() && github.event.inputs.mode == 'selftest'
+        if: success() && (github.event.inputs.mode == 'selftest' || github.event.inputs.mode == 'end-to-end')
         with:
-          name: neural-karaoke-selftest
-          path: worker-output/karaoke.mp4
+          name: karaoke-verification
+          path: worker-output/
           retention-days: 3

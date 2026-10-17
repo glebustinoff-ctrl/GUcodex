@@ -65,6 +65,13 @@ try{
     await run('ffmpeg',['-v','error','-y','-i',path.join(dataDir,`${job.minusId}.audio`),'-c:a','libmp3lame','-b:a','192k',path.join(output,'minus.mp3')]);
     const lyricsFile=job.timing==='lrc'?'lyrics.lrc':'lyrics.txt';
     await copyFile(path.join(jobDir,'lyrics.txt'),path.join(output,lyricsFile));
+    if(!issue){
+      const info=await probe(path.join(output,'karaoke.mp4'));
+      if(Math.abs(info.duration-job.duration)>.2)throw new Error('Full video duration mismatch');
+      const verification={source:job.source,sourceUrl:job.sourceUrl,fullVideoSeconds:info.duration,timing:job.timing,neuralSeparationVerified:true};
+      await writeFile(path.join(output,'verification.json'),JSON.stringify(verification,null,2));
+      console.log(JSON.stringify(verification));
+    }else{
     const tag=`karaoke-${issue.number}`;
     await writeFile(path.join(jobDir,'notes.md'),`Результат запроса #${issue.number}. Исходная запись: ${job.sourceUrl}\n\n${job.warning||'Таймкоды строк из LRC; подсветка слов приблизительная.'}\n`);
     // gh uses the automatic workflow token, never a token supplied by a website visitor.
@@ -72,6 +79,7 @@ try{
     const base=`https://github.com/${repository}/releases/download/${tag}`;
     Object.assign(job,{status:'done',step:'done',progress:100,message:'Караоке готово',downloadUrl:`${base}/karaoke.mp4`,minusUrl:`${base}/minus.mp3`,lyricsUrl:`${base}/${lyricsFile}`});
     delete job.originalUrl;
+    }
   }
   clearInterval(timer);await report();
 }catch(error){
