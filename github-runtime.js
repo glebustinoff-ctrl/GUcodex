@@ -41,8 +41,8 @@ export function createGitHubTransport({repository='glebustinoff-ctrl/GUcodex',fe
         if(comment.user?.login!=='github-actions[bot]')continue;
         let result;try{result=decodeMessage(comment.body,RESULT_MARKER);}catch{continue;}
         if(result.id!==id)continue;
-        for(const key of ['downloadUrl','minusUrl','lyricsUrl'])if(result[key]&&!result[key].startsWith(`https://github.com/${repository}/releases/download/karaoke-${job.issueNumber}/`))throw new Error('Некорректная ссылка результата.');
-        for(const key of ['status','step','progress','message','error','title','artist','warning','downloadUrl','minusUrl','lyricsUrl'])if(result[key]!==undefined)job[key]=result[key];
+        for(const key of ['downloadUrl','minusUrl','lyricsUrl','originalUrl'])if(result[key]&&!result[key].startsWith(`https://github.com/${repository}/releases/download/karaoke-${job.issueNumber}/`))throw new Error('Некорректная ссылка результата.');
+        for(const key of ['status','step','progress','message','error','title','artist','warning','downloadUrl','minusUrl','lyricsUrl','originalUrl'])if(result[key]!==undefined)job[key]=result[key];
         break;
       }
     }catch(error){job.message=`${error.message} Повторим проверку через минуту; задача продолжает выполняться.`;job.nextPoll=now()+60000;}
