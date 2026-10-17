@@ -193,6 +193,8 @@ function showAutomaticResult(job){
   $('automatic-status').classList.remove('error');$('automatic-status').textContent=`Готово: ${job.artist} — ${job.title}`;
   document.querySelectorAll('.automatic-steps li').forEach(item=>{item.classList.remove('active');item.classList.add('done');});
   for(const [id,key] of [['automatic-download','downloadUrl'],['automatic-minus','minusUrl'],['automatic-lyrics','lyricsUrl']]){$(id).href=job[key];$(id).setAttribute('download','');}
+  $('automatic-original').hidden=!job.originalUrl;
+  if(job.originalUrl){$('automatic-original').href=job.originalUrl;$('automatic-original').setAttribute('download','');}
   $('automatic-warning').textContent=job.warning||'';$('automatic-warning').hidden=!job.warning;
   $('automatic-result').hidden=false;$('automatic-video').src=job.downloadUrl;$('automatic-video').hidden=!automaticMode;$('phone-preview').hidden=automaticMode;
 }

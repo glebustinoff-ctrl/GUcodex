@@ -27,7 +27,7 @@ function report(){
   const published=job.downloadUrl?.startsWith(`https://github.com/${repository}/releases/download/`);
   const visible={id:job.id,title:job.title,artist:job.artist,status:job.status==='done'&&!published?'processing':job.status,step:job.step,progress:job.progress,message:job.message};
   for(const key of ['error','warning'])if(job[key])visible[key]=job[key];
-  if(published)for(const key of ['downloadUrl','minusUrl','lyricsUrl'])visible[key]=job[key];
+  if(published)for(const key of ['downloadUrl','minusUrl','lyricsUrl','originalUrl'])visible[key]=job[key];
   const body=encodeMessage(RESULT_MARKER,visible);
   queue=queue.catch(()=>{}).then(async()=>{
     if(commentId)await api(`/issues/comments/${commentId}`,'PATCH',{body});
@@ -63,6 +63,7 @@ try{
     const output=path.resolve('worker-output');await mkdir(output,{recursive:true});
     await copyFile(path.join(jobDir,'karaoke.mp4'),path.join(output,'karaoke.mp4'));
     await run('ffmpeg',['-v','error','-y','-i',path.join(dataDir,`${job.minusId}.audio`),'-c:a','libmp3lame','-b:a','192k',path.join(output,'minus.mp3')]);
+    await run('ffmpeg',['-v','error','-y','-i',path.join(dataDir,`${job.originalId}.audio`),'-c:a','libmp3lame','-b:a','192k',path.join(output,'original.mp3')]);
     const lyricsFile=job.timing==='lrc'?'lyrics.lrc':'lyrics.txt';
     await copyFile(path.join(jobDir,'lyrics.txt'),path.join(output,lyricsFile));
     if(!issue){
@@ -75,10 +76,9 @@ try{
     const tag=`karaoke-${issue.number}`;
     await writeFile(path.join(jobDir,'notes.md'),`Результат запроса #${issue.number}. Исходная запись: ${job.sourceUrl}\n\n${job.warning||'Таймкоды строк из LRC; подсветка слов приблизительная.'}\n`);
     // gh uses the automatic workflow token, never a token supplied by a website visitor.
-    await run('gh',['release','create',tag,'--repo',repository,'--title',`Караоке #${issue.number}`,'--notes-file',path.join(jobDir,'notes.md'),path.join(output,'karaoke.mp4'),path.join(output,'minus.mp3'),path.join(output,lyricsFile)],{timeout:600000});
+    await run('gh',['release','create',tag,'--repo',repository,'--title',`Караоке #${issue.number}`,'--notes-file',path.join(jobDir,'notes.md'),path.join(output,'karaoke.mp4'),path.join(output,'minus.mp3'),path.join(output,'original.mp3'),path.join(output,lyricsFile)],{timeout:600000});
     const base=`https://github.com/${repository}/releases/download/${tag}`;
-    Object.assign(job,{status:'done',step:'done',progress:100,message:'Караоке готово',downloadUrl:`${base}/karaoke.mp4`,minusUrl:`${base}/minus.mp3`,lyricsUrl:`${base}/${lyricsFile}`});
-    delete job.originalUrl;
+    Object.assign(job,{status:'done',step:'done',progress:100,message:'Караоке готово',downloadUrl:`${base}/karaoke.mp4`,minusUrl:`${base}/minus.mp3`,lyricsUrl:`${base}/${lyricsFile}`,originalUrl:`${base}/original.mp3`});
     }
   }
   clearInterval(timer);await report();
