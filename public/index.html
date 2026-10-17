@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111015">
+  <meta name="description" content="Создавайте вертикальные караоке-видео: найдите текст, добавьте аудио и скачайте готовый MP4.">
+  <title>Karaoke Studio — твоя песня, твоё видео</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <svg xmlns="http://www.w3.org/2000/svg" class="icons" aria-hidden="true"><defs>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 2.3 6.7L21 12l-6.7 2.3L12 21l-2.3-6.7L3 12l6.7-2.3L12 3Z"/><path d="m20 2 .7 2.3L23 5l-2.3.7L20 8l-.7-2.3L17 5l2.3-.7L20 2Z"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/><path d="M3 9h18"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V3m-5 5 5-5 5 5M4 15v5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5"/></symbol>
+    <symbol id="i-note" viewBox="0 0 24 24"><path d="M9 18V5l12-3v13M9 8l12-3"/><ellipse cx="5.5" cy="18.5" rx="3.5" ry="2.5"/><ellipse cx="17.5" cy="15.5" rx="3.5" ry="2.5"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 4 12 8-12 8V4Z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v13m-5-5 5 5 5-5M4 17v4h16v-4"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-film" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 2v20M16 2v20M4 7h4m-4 5h4m-4 5h4m8-10h4m-4 5h4m-4 5h4"/></symbol>
+  </defs></svg>
+  <aside class="sidebar">
+    <a class="brand" href="./" aria-label="Karaoke Studio, главная"><span class="brand-icon"><svg><use href="#i-mic"/></svg></span><span>karaoke<span class="brand-studio">studio</span></span></a>
+    <div class="workspace-label">ТВОЁ ТВОРЧЕСКОЕ ПРОСТРАНСТВО</div>
+    <nav aria-label="Основное меню">
+      <button class="nav-item active" id="new-project"><svg><use href="#i-plus"/></svg>Создать караоке<span class="nav-dot"></span></button>
+      <button class="nav-item" id="open-projects"><svg><use href="#i-folder"/></svg>Мои проекты<span class="project-count" id="project-count">0</span></button>
+    </nav>
+    <div class="sidebar-card"><div class="tiny-spark">✧</div><h3>Твоя песня.<br>Твоя сцена.</h3><p>Преврати любимую музыку в видео, которому хочется подпевать.</p><button class="demo-link" id="load-demo">Попробовать демо <svg><use href="#i-arrow"/></svg></button></div>
+    <div class="sidebar-bottom"><span class="status-dot"></span>Сделано для твоего голоса<span class="version">v0.1</span></div>
+  </aside>
+  <main>
+    <header class="topbar"><span class="breadcrumb">Студия <span>/</span> <strong>Новое караоке</strong></span><div class="topbar-right"><details class="mobile-actions"><summary>Проект⌄</summary><div><button data-action="new-project">Новый проект</button><button data-action="open-projects">Мои проекты</button><button data-action="load-demo">Попробовать демо</button></div></details><span class="local-badge"><span></span>Локальная студия</span><button class="avatar" id="help-button" aria-label="Как пользоваться">?</button></div></header>
+    <div class="page-content">
+      <div class="page-heading"><div><div class="eyebrow"><svg><use href="#i-spark"/></svg>ИЗ МУЗЫКИ — В МОМЕНТ</div><h1>Дай песне <span>свой голос.</span></h1><p>Найди песню. Добавь музыку. Создай своё караоке.</p></div><span class="format-pill"><svg><use href="#i-film"/></svg>Создано для 9:16</span></div>
+      <div class="studio-layout">
+        <section class="editor" aria-label="Редактор караоке">
+          <div class="workflow"><span class="current"><b>1</b>Песня</span><i></i><span id="workflow-audio"><b>2</b>Аудио и текст</span><i></i><span id="workflow-ready"><b>3</b>Твоё видео</span></div>
+          <section class="panel song-panel">
+            <div class="panel-heading"><div class="section-icon"><svg><use href="#i-search"/></svg></div><div><h2>С какой песни начнём?</h2><p>Найдём текст и тайминги в открытой библиотеке</p></div><span class="step-label">01</span></div>
+            <form id="search-form"><div class="search-fields"><label>Название песни<input id="song-title" placeholder="Например, Кукушка" autocomplete="off" maxlength="150" required></label><label>Исполнитель<input id="song-artist" placeholder="Например, Кино" autocomplete="off" maxlength="150"></label></div><button class="search-button" id="search-button"><svg><use href="#i-search"/></svg>Найти песню<svg class="end-arrow"><use href="#i-arrow"/></svg></button></form>
+            <div id="search-status" role="status" class="inline-status" hidden></div><div id="search-results" class="search-results"></div>
+            <div class="source-note"><span class="small-dot"></span>Тексты и синхронизация — LRCLIB <span>Без регистрации</span></div>
+          </section>
+          <section class="panel">
+            <div class="panel-heading"><div class="section-icon"><svg><use href="#i-note"/></svg></div><div><h2>Музыка для твоего видео</h2><p>Добавь минус или оригинальную запись песни</p></div><span class="step-label">02</span></div>
+            <div class="vk-source"><div><span class="vk-logo">VK</span><div><strong>VK Музыка</strong><span id="vk-connection">Проверяем подключение…</span></div></div><button id="vk-search-button" type="button">Найти плюс и минус<svg><use href="#i-search"/></svg></button></div>
+            <div id="vk-status" class="inline-status" role="status" hidden></div><div id="vk-results" class="search-results"></div>
+            <div class="upload-divider"><span>или загрузи свои файлы</span></div>
+            <div class="upload-grid">
+              <label class="upload-zone" id="minus-zone" tabindex="0"><input type="file" id="minus-file" accept="audio/*,.mp3,.wav,.m4a,.flac,.ogg" hidden><span class="upload-icon"><svg><use href="#i-note"/></svg></span><strong>Минус <span class="recommended">Рекомендуем</span></strong><span class="upload-description" id="minus-description">Перетащи или <em>выбери файл</em></span><small>Музыка без вокала</small></label>
+              <label class="upload-zone" id="plus-zone" tabindex="0"><input type="file" id="plus-file" accept="audio/*,.mp3,.wav,.m4a,.flac,.ogg" hidden><span class="upload-icon"><svg><use href="#i-mic"/></svg></span><strong>Плюс / оригинал</strong><span class="upload-description" id="plus-description">Перетащи или <em>выбери файл</em></span><small>Песня с голосом исполнителя</small></label>
+            </div>
+            <p class="file-hint">MP3, WAV, M4A, FLAC, OGG · до 100 МБ и 20 минут</p>
+            <div class="audio-options"><label class="select-label">В видео<select id="audio-source"><option value="minus">Минус</option><option value="plus">Оригинал</option><option value="reduce">Оригинал · приглушить вокал</option></select></label><span id="audio-duration" class="duration-label"><svg><use href="#i-clock"/></svg>Аудио не выбрано</span></div>
+            <p id="reduce-note" class="warning-note" hidden>Экспериментальный стереоэффект: может убрать бас и инструменты вместе с вокалом. Предпросмотр играет исходник; эффект применяется при экспорте.</p>
+            <p class="quiet-note">Выбери запись из VK при подключённом API или загрузи свои файлы. Используй музыку, на которую у тебя есть права.</p>
+          </section>
+          <section class="panel lyrics-panel">
+            <div class="panel-heading"><div class="section-icon text-icon">T<span>≡</span></div><div><h2>Слова, которые хочется петь</h2><p id="lyrics-caption">Вставь текст или загрузи файл с таймкодами</p></div><span class="step-label">03</span></div>
+            <div class="lyrics-toolbar"><span id="sync-badge" class="sync-badge"><span></span>Автотайминг</span><label class="text-file-button"><svg><use href="#i-upload"/></svg>Загрузить LRC / TXT<input id="lyrics-file" type="file" accept=".lrc,.txt,text/plain" hidden></label></div>
+            <textarea id="lyrics-input" spellcheck="false" aria-label="Текст песни и таймкоды" placeholder="Здесь появится текст твоей песни…&#10;&#10;Или вставь его сам — каждая строка с новой строки.&#10;Поддерживается LRC: [00:12.50]Строка песни" maxlength="30000"></textarea>
+            <div class="lyrics-footer"><span id="line-count">0 строк</span><button class="text-button" id="make-timings"><svg><use href="#i-clock"/></svg>Расставить таймкоды</button></div>
+            <div class="offset-row"><label for="lyrics-offset">Сдвиг текста <span title="Положительное значение задерживает появление строк">ⓘ</span></label><div><input type="number" id="lyrics-offset" min="-60" max="60" step="0.1" value="0" aria-label="Сдвиг текста в секундах"><span>сек</span></div></div>
+            <p class="quiet-note" id="timing-note">Без LRC строки распределяются равномерно. Для точного совпадения с вокалом отредактируй таймкоды.</p>
+          </section>
+          <div class="export-panel"><div class="export-info"><svg><use href="#i-film"/></svg><div><strong>Одна песня. Целое видео.</strong><span>MP4 · 1080 × 1920 · 30 fps · полная длина трека</span></div></div><button class="primary-button" id="render-button"><svg><use href="#i-spark"/></svg>Создать караоке<svg><use href="#i-arrow"/></svg></button><div id="render-status" class="render-status" role="status" hidden></div><progress id="render-progress" max="100" value="0" hidden></progress><a id="download-link" class="download-link" hidden><svg><use href="#i-download"/></svg>Скачать караоке · MP4</a></div>
+        </section>
+        <aside class="preview-column" aria-label="Предпросмотр видео">
+          <div class="preview-heading"><h2>Твоё будущее видео</h2><span><i></i>ПРЕДПРОСМОТР</span></div>
+          <div class="preview-shell"><div class="phone-preview" id="phone-preview"><img class="preview-background" id="preview-background" src="/api/background?theme=violet" alt=""><div class="preview-grain"></div><span class="preview-watermark"><svg><use href="#i-mic"/></svg>KARAOKE STUDIO</span><div class="preview-song"><h3 id="preview-title">Здесь будет<br>твоя песня</h3><p id="preview-artist">И твой голос в главной роли</p></div><div class="preview-lyrics"><div class="lyric-current" id="lyric-current">Пой в своём ритме</div><div class="lyric-next" id="lyric-next">А мы подскажем слова</div></div><div class="preview-bottom"><div class="sound-bars" id="sound-bars" aria-hidden="true"></div><span>ПОЙ В СВОЁМ РИТМЕ</span></div><span class="ratio-badge">9:16</span></div></div>
+          <div class="player"><button id="play-button" aria-label="Воспроизвести" disabled><svg><use href="#i-play"/></svg></button><span id="current-time">0:00</span><input type="range" id="seek" min="0" max="100" step="0.01" value="0" aria-label="Позиция воспроизведения" disabled><span id="total-time">0:00</span></div>
+          <div class="style-card"><div class="style-card-heading"><h3>Пусть выглядит как ты</h3><span>ОФОРМЛЕНИЕ</span></div><div class="theme-options" role="group" aria-label="Цветовая тема"><button class="theme-option selected" data-theme="violet" aria-pressed="true"><span class="theme-swatch violet"><svg><use href="#i-check"/></svg></span>Полночь</button><button class="theme-option" data-theme="ocean" aria-pressed="false"><span class="theme-swatch ocean"><svg><use href="#i-check"/></svg></span>Океан</button><button class="theme-option" data-theme="sunset" aria-pressed="false"><span class="theme-swatch sunset"><svg><use href="#i-check"/></svg></span>Закат</button></div><div class="font-row"><label for="font-size">Размер текста</label><select id="font-size"><option value="52">Компактный</option><option value="64" selected>Средний</option><option value="76">Крупный</option></select></div></div>
+          <div class="tip"><svg><use href="#i-spark"/></svg><p>Маленький совет<span>Готовый минус и LRC с таймкодами дадут самый точный результат.</span></p></div>
+          <button class="save-project" id="save-project"><svg><use href="#i-folder"/></svg>Сохранить проект в браузере</button>
+        </aside>
+      </div>
+      <footer class="page-footer"><span>Немного музыки. Немного магии. Много тебя.</span><span>KARAOKE STUDIO © 2026</span></footer>
+    </div>
+  </main>
+  <audio id="audio-player" preload="metadata"></audio>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <dialog id="projects-dialog"><div class="dialog-heading"><h2>Мои проекты</h2><button class="close-dialog" aria-label="Закрыть"><svg><use href="#i-close"/></svg></button></div><p class="dialog-note">Текст и настройки сохраняются в этом браузере. Аудио хранится на сервере.</p><div id="projects-list"></div></dialog>
+  <dialog id="help-dialog"><div class="dialog-heading"><h2>От песни до караоке</h2><button class="close-dialog" aria-label="Закрыть"><svg><use href="#i-close"/></svg></button></div><ol class="help-steps"><li><strong>Найди текст.</strong> Введи название и исполнителя или вставь свой текст.</li><li><strong>Добавь музыку.</strong> Выбери запись из VK Музыки при подключённом аудио API или загрузи свой минус/оригинал. Приложению нужен отдельный доступ VK к аудиометодам; токен хранится в секретах сервера.</li><li><strong>Проверь тайминги.</strong> LRC содержит время каждой строки. Без него используется примерное распределение. Подсветка слов внутри строки тоже приблизительная.</li><li><strong>Выбери оформление.</strong> Проверь видео в плеере и нажми «Создать караоке».</li><li><strong>Скачай MP4.</strong> Сервер обработает весь трек в формате 1080×1920. Это может занять несколько минут.</li></ol><p class="dialog-note">Это локальная версия для одного пользователя. Для публичного сервиса понадобятся учётные записи, лимиты, лицензированные источники музыки и профессиональное разделение вокала.</p></dialog>
+  <script src="./config.js"></script>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
