@@ -1,10 +1,12 @@
 import { renderInBrowser, browserFormat } from './web-render.js';
+import {createGitHubTransport} from './github-runtime.js';
 
 export const staticMode = window.KARAOKE_STATIC === true;
 export const automaticBase = staticMode ? (window.KARAOKE_API_URL || '') : '';
 export const backgroundURL = theme => staticMode ? `./assets/background-${theme}.png` : `/api/background?theme=${theme}`;
 export const videoFormat = staticMode ? browserFormat() : { extension:'mp4', label:'MP4' };
 const urls = new Map(), jobs = new Map();
+const githubRequest=createGitHubTransport({repository:window.KARAOKE_REPOSITORY||'glebustinoff-ctrl/GUcodex'});
 let database;
 function db() {
   return database ||= new Promise((resolve,reject) => {
@@ -97,10 +99,7 @@ async function staticRequest(path,options) {
 }
 export async function requestJSON(url,options={}) {
   if(staticMode&&url.startsWith('/api/auto')){
-    if(!automaticBase){
-      if(url==='/api/auto/status')return {ready:false,reason:'Автоматический режим ещё не подключён: нужен сервер обработки и доступ к аудио VK.'};
-      throw new Error('Автоматический режим ещё не подключён к серверу обработки.');
-    }
+    if(!automaticBase)return githubRequest(url,options);
     const response=await fetch(new URL(url,automaticBase),{signal:AbortSignal.timeout(120000),...options});
     const data=await response.json();if(!response.ok)throw new Error(data.error||'Ошибка автоматической обработки.');
     for(const key of ['downloadUrl','minusUrl','lyricsUrl','originalUrl'])if(data[key])data[key]=new URL(data[key],automaticBase).href;

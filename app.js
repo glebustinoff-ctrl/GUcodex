@@ -6,7 +6,9 @@ const fields = { title: $('song-title'), artist: $('song-artist'), lyrics: $('ly
 const audio = $('audio-player');
 const state = { minus: null, plus: null, theme: 'violet', lines: [], currentAudioId: null, uploading: 0, rendering: false, projectId: null };
 let vkSearching = false;
+let vkEnabled = false;
 let automaticMode = true;
+let stopWaiting=false;
 let toastTimer, searchController, lastLine = -2, activeWords = [];
 const accents = { violet:'#dfb7f6', ocean:'#a1e5da', sunset:'#ffb68d' };
 const time = seconds => `${Math.floor((seconds || 0) / 60)}:${String(Math.floor((seconds || 0) % 60)).padStart(2, '0')}`;
@@ -112,7 +114,7 @@ function updateFont() {
 $('search-form').addEventListener('submit', async event => {
   event.preventDefault();
   if(automaticMode)return runAutomatic();
-  void searchVK();
+  if(vkEnabled)void searchVK();
   searchController?.abort(); searchController = new AbortController();
   const status = $('search-status'); status.hidden = false; status.classList.remove('error'); status.textContent = 'Ищем твою песню…';
   const button = $('search-button'); button.disabled = true; $('search-results').replaceChildren();
@@ -158,7 +160,7 @@ async function runAutomatic(){
   if(state.rendering||state.uploading)return toast('Дождись завершения текущей операции.');
   const title=fields.title.value.trim(),artist=fields.artist.value.trim();
   if(!title||!artist)return toast('Укажи название песни и исполнителя.');
-  state.rendering=true;state.automaticResult=null;$('search-button').disabled=true;
+  stopWaiting=false;state.rendering=true;state.automaticResult=null;$('search-button').disabled=true;$('automatic-task').hidden=true;$('automatic-cancel').hidden=false;
   const status=$('automatic-status'),progress=$('automatic-progress');
   status.hidden=false;status.classList.remove('error');status.textContent='Запускаем автоматическое создание…';
   progress.hidden=false;progress.value=0;$('automatic-result').hidden=true;
@@ -167,7 +169,10 @@ async function runAutomatic(){
   try{
     let job=await post('/api/auto',{title,artist,theme:state.theme,fontSize:+fields.fontSize.value});
     while(job.status==='processing'){
+      if(stopWaiting)throw new Error('Ожидание прекращено. Если запрос уже отправлен, обработка продолжится; результат будет в задаче GitHub.');
       status.textContent=job.message||'Обрабатываем песню…';progress.value=job.progress||0;
+      const taskURL=job.confirmUrl||job.taskUrl;
+      if(taskURL){$('automatic-task').hidden=false;$('automatic-task-link').href=taskURL;$('automatic-task-link').textContent=job.confirmUrl?'Подтвердить запрос в GitHub':'Открыть задачу в GitHub';}
       const index=steps.indexOf(job.step);
       document.querySelectorAll('.automatic-steps li').forEach((item,i)=>{item.classList.toggle('active',i===index);item.classList.toggle('done',i<index);});
       await new Promise(resolve=>setTimeout(resolve,1500));
@@ -177,8 +182,9 @@ async function runAutomatic(){
     showAutomaticResult(job);
     toast('Полное караоке готово. Можно скачать видео, минус и текст.');
   }catch(error){status.textContent=error.message;status.classList.add('error');progress.hidden=true;}
-  finally{state.rendering=false;$('search-button').disabled=false;}
+  finally{state.rendering=false;$('search-button').disabled=false;$('automatic-cancel').hidden=true;}
 }
+$('automatic-cancel').addEventListener('click',()=>{stopWaiting=true;});
 function showAutomaticResult(job){
   state.automaticResult=job;
   $('automatic-progress').hidden=false;$('automatic-progress').value=100;$('automatic-status').hidden=false;
@@ -188,7 +194,7 @@ function showAutomaticResult(job){
   $('automatic-warning').textContent=job.warning||'';$('automatic-warning').hidden=!job.warning;
   $('automatic-result').hidden=false;$('automatic-video').src=job.downloadUrl;$('automatic-video').hidden=!automaticMode;$('phone-preview').hidden=automaticMode;
 }
-api('/api/auto/status').then(status=>{$('automatic-availability').classList.toggle('unavailable',!status.ready);$('automatic-availability').textContent=status.ready?'Автоматическое создание доступно. Обработка может занять несколько минут.':status.reason||'Автоматическая обработка пока недоступна.';}).catch(()=>{$('automatic-availability').classList.add('unavailable');$('automatic-availability').textContent='Сервер обработки сейчас недоступен.';});
+api('/api/auto/status').then(status=>{$('automatic-availability').classList.toggle('unavailable',!status.ready);$('automatic-availability').textContent=status.notice||(status.ready?(status.sourceVerified?'Обработчик доступен. Поиск музыки — без API-ключа.':'Обработчик подготовлен. Доступность записи проверится при поиске; API-ключ не нужен.'):status.reason||'Автоматическая обработка пока недоступна.');}).catch(()=>{$('automatic-availability').classList.add('unavailable');$('automatic-availability').textContent='Сервер обработки сейчас недоступен.';});
 
 async function searchVK() {
   if (vkSearching) return;
@@ -230,7 +236,7 @@ async function searchVK() {
   finally { vkSearching = false; button.disabled = false; }
 }
 $('vk-search-button').addEventListener('click',searchVK);
-api('/api/vk/status').then(status => { $('vk-connection').textContent = staticMode ? 'Доступно в серверной версии' : status.configured ? 'Доступ задан · проверим при поиске' : 'Для автопоиска нужно подключение API'; }).catch(() => { $('vk-connection').textContent = 'Подключение не проверено'; });
+api('/api/vk/status').then(status => {vkEnabled=status.configured;document.querySelector('.vk-source').hidden=!vkEnabled;document.querySelector('.upload-divider').hidden=!vkEnabled; $('vk-connection').textContent=status.configured?'Дополнительный источник подключён':'Не подключено';}).catch(() => {document.querySelector('.vk-source').hidden=true;document.querySelector('.upload-divider').hidden=true;});
 
 async function upload(kind, file) {
   if (!file) return;
