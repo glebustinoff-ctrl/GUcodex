@@ -39,3 +39,44 @@ test('transient GitHub failure retains pending job and throttles retries',async(
   const job=await request(`/api/auto/jobs/${id}`);assert.equal(job.status,'processing');assert.match(job.message,/ограничил/);
   clock+=30000;await request(`/api/auto/jobs/${id}`);assert.equal(queries,1);
 });
+
+test('pending request and completed downloads survive reload without submitting another issue',async()=>{
+  const values=new Map(),storage={getItem:key=>values.get(key),setItem:(key,value)=>values.set(key,value)};
+  let clock=Date.now(),opened=0,finished=false;
+  const calls=[];
+  const urls={downloadUrl:'https://github.com/glebustinoff-ctrl/GUcodex/releases/download/karaoke-7/karaoke.mp4',minusUrl:'https://github.com/glebustinoff-ctrl/GUcodex/releases/download/karaoke-7/minus.mp3',lyricsUrl:'https://github.com/glebustinoff-ctrl/GUcodex/releases/download/karaoke-7/lyrics.lrc',originalUrl:'https://github.com/glebustinoff-ctrl/GUcodex/releases/download/karaoke-7/original.mp3'};
+  const options={storage,now:()=>clock,uuid:()=>id,openWindow:()=>opened++,fetchImpl:async url=>{
+    calls.push(url);
+    if(url.includes('/comments'))return {ok:true,json:async()=>[{user:{login:'github-actions[bot]'},body:encodeMessage(RESULT_MARKER,{id,status:finished?'done':'processing',step:finished?'done':'separating',progress:finished?100:40,...(finished?urls:{})})}]};
+    return {ok:true,json:async()=>[{number:7,user:{login:'glebustinoff-ctrl'},title:`Караоке — запрос ${id}`,body:encodeMessage(REQUEST_MARKER,song)}]};
+  }};
+  let request=createGitHubTransport(options);
+  await request('/api/auto',{method:'POST',body:JSON.stringify(song)});
+  request=createGitHubTransport(options);
+  assert.equal((await request('/api/auto/resume')).id,id);assert.equal(opened,1);assert.equal(calls.length,0);
+  clock+=11000;const pending=await request(`/api/auto/jobs/${id}`);
+  assert.equal(pending.step,'separating');assert.equal(pending.issueNumber,7);assert.equal(calls.length,2);
+  request=createGitHubTransport(options);finished=true;clock+=61000;
+  const done=await request(`/api/auto/jobs/${id}`);assert.equal(done.status,'done');assert.equal(done.originalUrl,urls.originalUrl);
+  assert.equal(calls.length,3);assert.ok(calls[2].includes('/7/comments'));assert.equal(opened,1);
+  request=createGitHubTransport(options);
+  assert.equal((await request('/api/auto/resume')).downloadUrl,urls.downloadUrl);assert.equal(calls.length,3);
+});
+
+test('reload after a long absence retrieves an already completed worker result',async()=>{
+  let record=JSON.stringify({...song,status:'processing',created:Date.now()-3*60*60*1000,issueNumber:7});
+  const request=createGitHubTransport({storage:{getItem:()=>record,setItem:(_,value)=>{record=value;}},openWindow:()=>assert.fail('Unexpected popup'),fetchImpl:async url=>{
+    assert.ok(url.includes('/7/comments'));
+    return {ok:true,json:async()=>[{user:{login:'github-actions[bot]'},body:encodeMessage(RESULT_MARKER,{id,status:'done',downloadUrl:'https://github.com/glebustinoff-ctrl/GUcodex/releases/download/karaoke-7/karaoke.mp4'})}]};
+  }});
+  assert.equal((await request(`/api/auto/jobs/${id}`)).status,'done');
+});
+
+test('damaged saved data and foreign download URLs cannot restore a result',async()=>{
+  for(const saved of ['not JSON',JSON.stringify({...song,created:Date.now(),status:'done',issueNumber:7,downloadUrl:'https://attacker.invalid/',minusUrl:'https://attacker.invalid/',lyricsUrl:'https://attacker.invalid/'})]){
+    const request=createGitHubTransport({storage:{getItem:()=>saved},openWindow:()=>assert.fail('Unexpected popup')});
+    assert.deepEqual(await request('/api/auto/resume'),{});
+  }
+  const request=createGitHubTransport({storage:{getItem:()=>null,setItem:()=>{throw new Error('Quota exceeded');}},uuid:()=>id,openWindow:()=>{}});
+  assert.equal((await request('/api/auto',{method:'POST',body:JSON.stringify(song)})).status,'processing');
+});

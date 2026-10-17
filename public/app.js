@@ -156,7 +156,7 @@ function setMode(automatic){
 }
 $('automatic-mode').addEventListener('click',()=>setMode(true));
 $('manual-mode').addEventListener('click',()=>setMode(false));
-async function runAutomatic(){
+async function runAutomatic(existingJob=null){
   if(state.rendering||state.uploading)return toast('Дождись завершения текущей операции.');
   const title=fields.title.value.trim(),artist=fields.artist.value.trim();
   if(!title||!artist)return toast('Укажи название песни и исполнителя.');
@@ -167,7 +167,8 @@ async function runAutomatic(){
   $('automatic-video').pause();$('automatic-video').hidden=true;$('phone-preview').hidden=false;audio.pause();
   const steps=['search','lyrics','separating','video'];
   try{
-    let job=await post('/api/auto',{title,artist,theme:state.theme,fontSize:+fields.fontSize.value});
+    let job=existingJob||await post('/api/auto',{title,artist,theme:state.theme,fontSize:+fields.fontSize.value});
+    if(job.confirmUrl||job.taskUrl){$('automatic-task').hidden=false;$('automatic-task-link').href=job.confirmUrl||job.taskUrl;$('automatic-task-link').textContent=job.confirmUrl?'Подтвердить запрос в GitHub':'Открыть задачу в GitHub';}
     while(job.status==='processing'){
       if(stopWaiting)throw new Error('Ожидание прекращено. Если запрос уже отправлен, обработка продолжится; результат будет в задаче GitHub.');
       status.textContent=job.message||'Обрабатываем песню…';progress.value=job.progress||0;
@@ -198,7 +199,16 @@ function showAutomaticResult(job){
   $('automatic-warning').textContent=job.warning||'';$('automatic-warning').hidden=!job.warning;
   $('automatic-result').hidden=false;$('automatic-video').src=job.downloadUrl;$('automatic-video').hidden=!automaticMode;$('phone-preview').hidden=automaticMode;
 }
-api('/api/auto/status').then(status=>{$('automatic-availability').classList.toggle('unavailable',!status.ready);$('automatic-availability').textContent=status.notice||(status.ready?(status.sourceVerified?'Обработчик доступен. Поиск музыки — без API-ключа.':'Обработчик подготовлен. Доступность записи проверится при поиске; API-ключ не нужен.'):status.reason||'Автоматическая обработка пока недоступна.');}).catch(()=>{$('automatic-availability').classList.add('unavailable');$('automatic-availability').textContent='Сервер обработки сейчас недоступен.';});
+api('/api/auto/status').then(status=>{$('automatic-availability').classList.toggle('unavailable',!status.ready);$('automatic-availability').textContent=status.notice||(status.ready?(status.sourceVerified?'Обработчик доступен. Поиск музыки — без API-ключа.':'Обработчик подготовлен. Доступность записи проверится при поиске; API-ключ не нужен.'):status.reason||'Автоматическая обработка пока недоступна.');if(status.transport==='github')void resumeAutomatic();}).catch(()=>{$('automatic-availability').classList.add('unavailable');$('automatic-availability').textContent='Сервер обработки сейчас недоступен.';});
+async function resumeAutomatic(){
+  try{
+    const job=await api('/api/auto/resume');
+    if(!job.id||state.rendering||!automaticMode)return;
+    fields.title.value=job.title;fields.artist.value=job.artist;fields.fontSize.value=String(job.fontSize||64);selectTheme(job.theme);updateFont();updateLines();
+    if(job.status==='done')showAutomaticResult(job);
+    else void runAutomatic(job);
+  }catch{/* A saved job is optional; new requests remain available. */}
+}
 
 async function searchVK() {
   if (vkSearching) return;
