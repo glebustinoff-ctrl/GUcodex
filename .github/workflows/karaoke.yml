@@ -1,0 +1,63 @@
+name: Create karaoke video
+
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [source-check, selftest]
+        default: source-check
+      title:
+        description: Song title for source check
+        default: Never Gonna Give You Up
+      artist:
+        description: Artist for source check
+        default: Rick Astley
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: karaoke-worker
+  cancel-in-progress: false
+
+jobs:
+  karaoke:
+    if: github.event_name == 'workflow_dispatch' || (github.event.issue.user.login == github.repository_owner && startsWith(github.event.issue.title, 'Караоке — запрос '))
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Media tools
+        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .venv
+            .models
+          key: karaoke-ubuntu-python312-${{ hashFiles('requirements-ai.txt', 'scripts/install-ai.sh', 'scripts/separate.py') }}
+      - name: Prepare downloader and neural model
+        id: prepare
+        continue-on-error: true
+        run: bash scripts/install-ai.sh
+      - name: Process request
+        run: node scripts/run-request.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          PREPARE_OUTCOME: ${{ steps.prepare.outcome }}
+      - uses: actions/upload-artifact@v4
+        if: success() && github.event.inputs.mode == 'selftest'
+        with:
+          name: neural-karaoke-selftest
+          path: worker-output/karaoke.mp4
+          retention-days: 3

@@ -1,10 +1,8 @@
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {randomUUID} from 'node:crypto';
-import {mkdir,writeFile,copyFile,rm} from 'node:fs/promises';
-import {existsSync,createWriteStream} from 'node:fs';
-import {Readable,Transform} from 'node:stream';
-import {pipeline} from 'node:stream/promises';
+import {mkdir,writeFile,copyFile,stat} from 'node:fs/promises';
+import {existsSync} from 'node:fs';
 import {run,probe,renderVideo} from './media.js';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
@@ -16,21 +14,18 @@ export function matchSong(songs,title,artist) {
 }
 export function separatorReady(){return existsSync(path.join(ROOT,'.venv/bin/python'))&&existsSync(path.join(ROOT,'.models/ready.json'));}
 
-export async function createAutomaticVideo({job,dataDir,vk,title,artist,theme='violet',fontSize=64,lyricsBase='https://lrclib.net',separate=separateVocals,fetchImpl=fetch}) {
+export async function createAutomaticVideo({job,dataDir,source,title,artist,theme='violet',fontSize=64,lyricsBase='https://lrclib.net',separate=separateVocals,fetchImpl=fetch}) {
   const jobDir=path.join(dataDir,job.id);await mkdir(jobDir,{recursive:true});
   const stage=(step,message,progress)=>Object.assign(job,{step,message,progress});
   stage('search','Находим оригинальную запись',5);
-  const results=await vk.method('audio.search',{q:`${artist} ${title}`,count:'30',auto_complete:'0'});
-  const track=matchSong((results.items||[]).map(s=>({id:`${s.owner_id}_${s.id}`,title:s.title,artist:s.artist,duration:s.duration})),title,artist);
-  const {response}=await vk.getFile(track.id);
+  const acquired=await source.acquire({title,artist,jobDir});
   const originalId=randomUUID(),original=path.join(dataDir,`${originalId}.audio`);
-  const max=100*1024*1024;
-  if(+response.headers.get('content-length')>max){await response.body?.cancel();throw new Error('Запись больше 100 МБ.');}
-  let bytes=0;
-  try{await pipeline(Readable.fromWeb(response.body),new Transform({transform(c,e,cb){bytes+=c.length;cb(bytes>max?new Error('Запись больше 100 МБ.'):null,c);}}),createWriteStream(original,{flags:'wx'}));}
-  catch(e){await rm(original,{force:true});throw e;}
+  const size=(await stat(acquired.path)).size;
+  if(!size||size>100*1024*1024)throw new Error('Полученный аудиофайл пуст или больше 100 МБ.');
+  await copyFile(acquired.path,original);
   const info=await probe(original);
-  await writeFile(path.join(dataDir,`${originalId}.json`),JSON.stringify({id:originalId,...info,name:`${artist} — ${title} · оригинал`,source:'vk'}));
+  source.verified=true;job.source=source.name;job.sourceUrl=acquired.sourceUrl;
+  await writeFile(path.join(dataDir,`${originalId}.json`),JSON.stringify({id:originalId,...info,name:`${artist} — ${title} · оригинал`,source:acquired.source||'public'}));
   stage('lyrics','Получаем текст и тайминги',20);
   const url=new URL('/api/search',lyricsBase);url.searchParams.set('track_name',title);url.searchParams.set('artist_name',artist);
   let songs;
@@ -60,7 +55,7 @@ export async function createAutomaticVideo({job,dataDir,vk,title,artist,theme='v
 
 export async function separateVocals(original,jobDir) {
   if(!separatorReady())throw new Error('Нейросеть для минуса ещё не подготовлена на сервере.');
-  const wav=path.join(jobDir,'original.wav');
+  const wav=path.join(jobDir,`decoded-${randomUUID()}.wav`);
   await run('ffmpeg',['-v','error','-y','-i',original,'-ac','2','-ar','44100',wav]);
   const output=path.join(jobDir,'stems');
   await run(path.join(ROOT,'.venv/bin/python'),[path.join(ROOT,'scripts/separate.py'),wav,output],{timeout:3600000});

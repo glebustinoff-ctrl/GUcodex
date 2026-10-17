@@ -9,6 +9,7 @@ import { Transform, Readable } from 'node:stream';
 import { parseLyrics, createASS, background, THEMES } from './lib.js';
 import { VKMusic } from './vk.js';
 import {createAutomaticVideo,separatorReady} from './automatic.js';
+import {PublicAudioSource} from './public-source.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const MAX_BYTES = 100 * 1024 * 1024;
@@ -31,6 +32,8 @@ export async function createApp({ dataDir = path.join(ROOT, '.data'), lyricsBase
   await mkdir(dataDir, { recursive: true });
   const jobs = new Map();
   const vk = new VKMusic(vkOptions);
+  const source=automaticOptions.source||new PublicAudioSource();
+  if(source.prepare)await source.prepare();
   let busy = false;
   async function findJob(id){
     if(!ID.test(id||''))return null;
@@ -62,19 +65,19 @@ export async function createApp({ dataDir = path.join(ROOT, '.data'), lyricsBase
       if (req.method === 'GET' && url.pathname === '/api/health') return send(res, 200, { status: 'ok' });
       if(req.method==='GET'&&url.pathname==='/api/auto/status'){
         const separator=!!automaticOptions.separate||separatorReady();
-        return send(res,200,{ready:vk.configured&&separator,sourceConfigured:vk.configured,separatorReady:separator,reason:!vk.configured?'Нужно подключить доступ к аудио VK на сервере.':!separator?'На сервере ещё не подготовлена нейросеть для создания минуса.':''});
+        return send(res,200,{ready:!!source.configured&&separator,sourceConfigured:!!source.configured,sourceVerified:!!source.verified,source:source.name,requiresApiKey:false,separatorReady:separator,reason:!source.configured?'На сервере ещё не установлен загрузчик публичных аудиозаписей.':!separator?'На сервере ещё не подготовлена нейросеть для создания минуса.':''});
       }
       if(req.method==='POST'&&url.pathname==='/api/auto'){
         const body=await jsonBody(req);
         const title=typeof body.title==='string'?body.title.trim():'';
         const artist=typeof body.artist==='string'?body.artist.trim():'';
         if(!title||!artist||title.length>150||artist.length>150)throw new Error('Укажи название песни и исполнителя (до 150 символов).');
-        if(!vk.configured)throw Object.assign(new Error('Автоматическое получение песни из VK ещё не подключено. На сервере нужен аудиодоступ VK.'),{status:424});
+        if(!source.configured)throw Object.assign(new Error('На сервере ещё не подготовлено получение музыки из публичных источников. API-ключ не требуется.'),{status:424});
         if(!automaticOptions.separate&&!separatorReady())throw Object.assign(new Error('Нейросеть для создания минуса ещё не подготовлена на сервере.'),{status:424});
         if(busy)return send(res,409,{error:'Уже создаётся видео. Дождись завершения.'});
         const job={id:randomUUID(),status:'processing',step:'queued',message:'Запускаем создание караоке',progress:0};
         jobs.set(job.id,job);busy=true;
-        createAutomaticVideo({job,dataDir,vk,title,artist,theme:body.theme,fontSize:body.fontSize,lyricsBase,...automaticOptions})
+        createAutomaticVideo({job,dataDir,title,artist,theme:body.theme,fontSize:body.fontSize,lyricsBase,...automaticOptions,source})
           .catch(error=>{job.status='error';job.error=error.message;job.message='Не удалось завершить создание караоке';})
           .finally(()=>{busy=false;});
         return send(res,202,job);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
-import {mkdtemp,readFile,rm,copyFile} from 'node:fs/promises';
+import {mkdtemp,rm,copyFile} from 'node:fs/promises';
 import {createApp} from '../server.js';
 import {matchSong} from '../automatic.js';
 import {run} from '../media.js';
@@ -17,13 +17,13 @@ test('automatic matching rejects another artist and live versions',()=>{
   assert.throws(()=>matchSong([{title:'Песня (Live)',artist:'Автор'}],'Песня','Автор'),/совпадающими/);
 });
 
-test('automatic endpoint reports missing VK access without starting a job',async t=>{
+test('automatic endpoint reports a missing public downloader without requesting API keys',async t=>{
   const dir=await mkdtemp(path.join(tmpdir(),'karaoke-auto-blocked-'));
-  const server=await createApp({dataDir:dir,vkOptions:{token:''}}),base=await listen(server);
+  const server=await createApp({dataDir:dir,vkOptions:{token:''},automaticOptions:{source:{name:'Unavailable source',configured:false}}}),base=await listen(server);
   t.after(async()=>{await close(server);await rm(dir,{recursive:true,force:true});});
   const status=await(await fetch(base+'/api/auto/status')).json();assert.equal(status.ready,false);
   const response=await fetch(base+'/api/auto',{method:'POST',body:JSON.stringify({title:'Песня',artist:'Автор'})});
-  assert.equal(response.status,424);assert.match((await response.json()).error,/VK/);
+  assert.equal(response.status,424);assert.match((await response.json()).error,/API-ключ не требуется/);
   const preflight=await fetch(base+'/api/auto',{method:'OPTIONS',headers:{Origin:'https://glebustinoff-ctrl.github.io'}});
   assert.equal(preflight.status,204);assert.equal(preflight.headers.get('Access-Control-Allow-Origin'),'https://glebustinoff-ctrl.github.io');
   assert.equal((await fetch(base+'/api/auto',{method:'OPTIONS',headers:{Origin:'https://untrusted.example'}})).status,403);
@@ -33,19 +33,17 @@ test('automatic pipeline with test provider and separator stub exports a complet
   const temp=await mkdtemp(path.join(tmpdir(),'karaoke-auto-'));
   const wav=path.join(temp,'fixture.wav');
   await run('ffmpeg',['-v','error','-f','lavfi','-i','sine=frequency=330:duration=2.4','-ac','2',wav]);
-  const fixture=await readFile(wav);
   const upstream=http.createServer((req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify([{trackName:'Песня',artistName:'Автор',duration:2.4,syncedLyrics:'[00:00]Первая строка\n[00:01.20]Вторая строка'}]));});
   const lyricsBase=await listen(upstream);let separated=0;
-  const options={dataDir:path.join(temp,'data'),lyricsBase,vkOptions:{token:'fixture',fetchImpl:async target=>{
-    if(String(target).endsWith('audio.search'))return Response.json({response:{items:[{owner_id:1,id:2,title:'Песня',artist:'Автор',duration:2.4}]}});
-    if(String(target).endsWith('audio.getById'))return Response.json({response:[{url:'https://fixture.vkuseraudio.net/fixture.mp3'}]});
-    return new Response(fixture,{headers:{'Content-Type':'audio/wav'}});
-  }},automaticOptions:{separate:async(original,dir)=>{
+  const options={dataDir:path.join(temp,'data'),lyricsBase,vkOptions:{token:''},automaticOptions:{source:{name:'Test public audio',configured:true,acquire:async({jobDir})=>{
+    const file=path.join(jobDir,'fixture.wav');await copyFile(wav,file);return {path:file,source:'test-public'};
+  }},separate:async(original,dir)=>{
     // This deliberately tests orchestration, not neural separation quality.
     separated++;const output=path.join(dir,'test-minus.wav');await copyFile(original,output);return output;
   }}};
   let server=await createApp(options),base=await listen(server);
   t.after(async()=>{await close(server);await close(upstream);await rm(temp,{recursive:true,force:true});});
+  const capability=await(await fetch(base+'/api/auto/status')).json();assert.equal(capability.ready,true);assert.equal(capability.requiresApiKey,false);
   const response=await fetch(base+'/api/auto',{method:'POST',body:JSON.stringify({title:'Песня',artist:'Автор'})});
   assert.equal(response.status,202);let job=await response.json();
   while(job.status==='processing'){await new Promise(r=>setTimeout(r,100));job=await(await fetch(base+`/api/auto/jobs/${job.id}`)).json();}
