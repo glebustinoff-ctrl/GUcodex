@@ -187,6 +187,8 @@ async function runAutomatic(){
 $('automatic-cancel').addEventListener('click',()=>{stopWaiting=true;});
 function showAutomaticResult(job){
   state.automaticResult=job;
+  $('automatic-task').hidden=!job.taskUrl;
+  if(job.taskUrl){$('automatic-task-link').href=job.taskUrl;$('automatic-task-link').textContent='Открыть задачу в GitHub';}
   $('automatic-progress').hidden=false;$('automatic-progress').value=100;$('automatic-status').hidden=false;
   $('automatic-status').classList.remove('error');$('automatic-status').textContent=`Готово: ${job.artist} — ${job.title}`;
   document.querySelectorAll('.automatic-steps li').forEach(item=>{item.classList.remove('active');item.classList.add('done');});

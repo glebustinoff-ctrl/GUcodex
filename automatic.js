@@ -40,7 +40,7 @@ export async function createAutomaticVideo({job,dataDir,source,title,artist,them
   const lyrics=synced?song.syncedLyrics:song.plainLyrics;
   await writeFile(path.join(jobDir,'lyrics.txt'),lyrics);
   job.timing=synced?'lrc':'estimated';job.duration=info.duration;
-  if(!synced)job.warning='Точных таймкодов не найдено: строки распределены приблизительно.';
+  job.warning=synced?'Таймкоды строк взяты из LRC; подсветка слов приблизительная.':'Точных таймкодов не найдено: строки распределены приблизительно.';
   stage('separating','Отделяем вокал нейросетью и создаём минус',35);
   const minusPath=await separate(original,jobDir);
   const minusInfo=await probe(minusPath);
