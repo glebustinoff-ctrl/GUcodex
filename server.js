@@ -210,7 +210,7 @@ export async function createApp({ dataDir = path.join(ROOT, '.data'), lyricsBase
         stream.pipe(res); return;
       }
       if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { error:'Метод не поддерживается.' });
-      const files = { '/':'index.html', '/app.js':'app.js', '/styles.css':'styles.css', '/timing.js':'timing.js', '/config.js':'config.js', '/runtime.js':'runtime.js', '/web-render.js':'web-render.js' };
+      const files = { '/':'index.html', '/app.js':'app.js', '/styles.css':'styles.css', '/timing.js':'timing.js', '/config.js':'config.js', '/runtime.js':'runtime.js', '/web-render.js':'web-render.js', '/github-runtime.js':'github-runtime.js', '/github-protocol.js':'github-protocol.js' };
       const name = files[url.pathname];
       if (!name) return send(res, 404, { error:'Страница не найдена.' });
       const content = await readFile(path.join(ROOT, 'public', name));

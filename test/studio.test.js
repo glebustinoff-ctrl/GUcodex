@@ -58,6 +58,9 @@ test('HTTP workflow: lyrics lookup, real audio upload, full MP4 export and range
   t.after(async () => { await close(server); await close(upstream); await rm(temp,{recursive:true,force:true}); });
 
   const page = await fetch(base); assert.equal(page.status,200); assert.match(await page.text(), /Дай песне/);
+  for(const asset of ['runtime.js','github-runtime.js','github-protocol.js']){
+    const response=await fetch(`${base}/${asset}`);assert.equal(response.status,200);assert.match(response.headers.get('content-type'),/javascript/);
+  }
   const search = await fetch(base + '/api/search?' + new URLSearchParams({ title:'Тест', artist:'Автор' }));
   const song = (await search.json()).songs[0]; assert.equal(song.title,'Тест'); assert.match(song.syncedLyrics, /00:01.20/);
   assert.equal((await fetch(base + '/api/search?title=unavailable')).status,502);
